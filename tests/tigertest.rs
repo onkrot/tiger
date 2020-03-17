@@ -1,74 +1,114 @@
-use tiger_hash::{tiger_str, TigerState};
+use digest::Digest;
+use tiger_hash::TigerHash;
 
 #[test]
 fn two_blocks2() {
+    let res = TigerHash::digest(b"Tiger - A Fast New Hash Function, by Ross Anderson and Eli Biham, proceedings of Fast Software Encryption 3, Cambridge, 1996.");
     assert_eq!(
-        [0x3D9AEB03D1BD1A63, 0x57B2774DFD6D5B24, 0xDD68151D503974FC],
-        tiger_str("Tiger - A Fast New Hash Function, by Ross Anderson and Eli Biham, proceedings of Fast Software Encryption 3, Cambridge, 1996.")
+        [
+            0x3D, 0x9A, 0xEB, 0x03, 0xD1, 0xBD, 0x1A, 0x63, 0x57, 0xB2, 0x77, 0x4D, 0xFD, 0x6D,
+            0x5B, 0x24, 0xDD, 0x68, 0x15, 0x1D, 0x50, 0x39, 0x74, 0xFC
+        ],
+        res.as_slice()
     );
 }
 
 #[test]
 fn two_blocks() {
+    let res = TigerHash::digest(b"Tiger - A Fast New Hash Function, by Ross Anderson and Eli Biham, proceedings of Fast Software Encryption 3, Cambridge.");
     assert_eq!(
-        [0xEBF591D5AFA655CE, 0x7F22894FF87F54AC, 0x89C811B6B0DA3193],
-        tiger_str("Tiger - A Fast New Hash Function, by Ross Anderson and Eli Biham, proceedings of Fast Software Encryption 3, Cambridge.")
+        [
+            0xEB, 0xF5, 0x91, 0xD5, 0xAF, 0xA6, 0x55, 0xCE, 0x7F, 0x22, 0x89, 0x4F, 0xF8, 0x7F,
+            0x54, 0xAC, 0x89, 0xC8, 0x11, 0xB6, 0xB0, 0xDA, 0x31, 0x93
+        ],
+        res.as_slice()
     );
 }
 
 #[test]
 fn str_1024() {
+    let res = TigerHash::digest(b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-");
     assert_eq!(
-        [0xB83EB4E53440C5, 0x76AC6AAEE0A74858, 0x25FD15E70A59FFE4],
-        tiger_str("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-")
+        [
+            0x00, 0xB8, 0x3E, 0xB4, 0xE5, 0x34, 0x40, 0xC5, 0x76, 0xAC, 0x6A, 0xAE, 0xE0, 0xA7,
+            0x48, 0x58, 0x25, 0xFD, 0x15, 0xE7, 0x0A, 0x59, 0xFF, 0xE4
+        ],
+        res.as_slice()
     );
 }
 
 #[test]
 fn abc() {
+    let res = TigerHash::digest(b"abc");
     assert_eq!(
-        [0xF258C1E88414AB2A, 0x527AB541FFC5B8BF, 0x935F7B951C132951],
-        tiger_str("abc")
+        [
+            0xF2, 0x58, 0xC1, 0xE8, 0x84, 0x14, 0xAB, 0x2A, 0x52, 0x7A, 0xB5, 0x41, 0xFF, 0xC5,
+            0xB8, 0xBF, 0x93, 0x5F, 0x7B, 0x95, 0x1C, 0x13, 0x29, 0x51
+        ],
+        res.as_slice()
     );
 }
 
 #[test]
 fn empty() {
+    let res = TigerHash::digest(b"");
     assert_eq!(
-        [0x24F0130C63AC9332, 0x16166E76B1BB925F, 0xF373DE2D49584E7A],
-        tiger_str("")
+        [
+            0x24, 0xF0, 0x13, 0x0C, 0x63, 0xAC, 0x93, 0x32, 0x16, 0x16, 0x6E, 0x76, 0xB1, 0xBB,
+            0x92, 0x5F, 0xF3, 0x73, 0xDE, 0x2D, 0x49, 0x58, 0x4E, 0x7A
+        ],
+        res.as_slice()
     );
 }
 
 #[test]
-fn str_tiger() {
+fn tiger_str() {
+    let res = TigerHash::digest(b"Tiger");
     assert_eq!(
-        [0x9F00F599072300DD, 0x276ABB38C8EB6DEC, 0x37790C116F9D2BDF],
-        tiger_str("Tiger")
+        [
+            0x9F, 0x00, 0xF5, 0x99, 0x07, 0x23, 0x00, 0xDD, 0x27, 0x6A, 0xBB, 0x38, 0xC8, 0xEB,
+            0x6D, 0xEC, 0x37, 0x79, 0x0C, 0x11, 0x6F, 0x9D, 0x2B, 0xDF
+        ],
+        res.as_slice()
     );
 }
 
 #[test]
 fn one_block() {
+    let res =
+        TigerHash::digest(b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-");
     assert_eq!(
-        [0x87FB2A9083851CF7, 0x470D2CF810E6DF9E, 0xB586445034A5A386],
-        tiger_str("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-")
+        [
+            0x87, 0xFB, 0x2A, 0x90, 0x83, 0x85, 0x1C, 0xF7, 0x47, 0x0D, 0x2C, 0xF8, 0x10, 0xE6,
+            0xDF, 0x9E, 0xB5, 0x86, 0x44, 0x50, 0x34, 0xA5, 0xA3, 0x86
+        ],
+        res.as_slice()
     );
 }
 
 #[test]
 fn one_block2() {
+    let res =
+        TigerHash::digest(b"ABCDEFGHIJKLMNOPQRSTUVWXYZ=abcdefghijklmnopqrstuvwxyz+0123456789");
     assert_eq!(
-        [0x467DB80863EBCE48, 0x8DF1CD1261655DE9, 0x57896565975F9197],
-        tiger_str("ABCDEFGHIJKLMNOPQRSTUVWXYZ=abcdefghijklmnopqrstuvwxyz+0123456789")
+        [
+            0x46, 0x7D, 0xB8, 0x08, 0x63, 0xEB, 0xCE, 0x48, 0x8D, 0xF1, 0xCD, 0x12, 0x61, 0x65,
+            0x5D, 0xE9, 0x57, 0x89, 0x65, 0x65, 0x97, 0x5F, 0x91, 0x97
+        ],
+        res.as_slice()
     );
 }
 
 #[test]
 fn one_block_tiger() {
+    let res =
+        TigerHash::digest(b"Tiger - A Fast New Hash Function, by Ross Anderson and Eli Biham");
     assert_eq!(
-        [0xC410A042968868A, 0x1671DA5A3FD29A72, 0x5EC1E457D3CDB303],
-        tiger_str("Tiger - A Fast New Hash Function, by Ross Anderson and Eli Biham")
+        [
+            0x0C, 0x41, 0x0A, 0x04, 0x29, 0x68, 0x86, 0x8A, 0x16, 0x71, 0xDA, 0x5A, 0x3F, 0xD2,
+            0x9A, 0x72, 0x5E, 0xC1, 0xE4, 0x57, 0xD3, 0xCD, 0xB3, 0x03
+        ],
+        res.as_slice()
     );
 }
 
@@ -78,11 +118,30 @@ fn str_64k() {
     for i in 0..65536 {
         data.push((i & 0xFF) as u8)
     }
-    let mut state = TigerState::new();
-    state.update(data.as_ref());
-    let res = state.finalize();
+    let mut state = TigerHash::new();
+    state.input(&data);
+    let res = state.result();
     assert_eq!(
-        [0x8EF43951B3F5F4FD, 0x1D41AFE51B420E71, 0x0462F233C3AAA8E1],
-        res
+        [
+            0x8E, 0xF4, 0x39, 0x51, 0xB3, 0xF5, 0xF4, 0xFD, 0x1D, 0x41, 0xAF, 0xE5, 0x1B, 0x42,
+            0x0E, 0x71, 0x04, 0x62, 0xF2, 0x33, 0xC3, 0xAA, 0xA8, 0xE1
+        ],
+        res.as_slice()
+    );
+}
+
+#[test]
+fn str_64k_digest() {
+    let mut data: Vec<u8> = Vec::new();
+    for i in 0..65536 {
+        data.push((i & 0xFF) as u8)
+    }
+    let res = TigerHash::digest(&data);
+    assert_eq!(
+        [
+            0x8E, 0xF4, 0x39, 0x51, 0xB3, 0xF5, 0xF4, 0xFD, 0x1D, 0x41, 0xAF, 0xE5, 0x1B, 0x42,
+            0x0E, 0x71, 0x04, 0x62, 0xF2, 0x33, 0xC3, 0xAA, 0xA8, 0xE1
+        ],
+        res.as_slice()
     );
 }

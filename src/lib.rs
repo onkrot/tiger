@@ -1,24 +1,38 @@
+pub extern crate digest;
+
+use digest::generic_array::typenum::{U24, U64};
+use digest::generic_array::GenericArray;
+use digest::{BlockInput, FixedOutput, Input, Reset};
+
 const BLOCK_SIZE: usize = 64;
 
-type Block = [u8; BLOCK_SIZE];
-type TigerDigest = [u64; 3];
-
-pub struct TigerState {
-    data: Block,
-    registers: TigerDigest,
+#[derive(Clone)]
+pub struct TigerHash {
+    data: [u8; BLOCK_SIZE],
+    state: [u64; 3],
     total: usize,
 }
 
-impl TigerState {
-    pub fn new() -> TigerState {
-        TigerState {
+impl Default for TigerHash {
+    fn default() -> Self {
+        TigerHash {
+            total: 0,
             data: [0; 64],
-            registers: [0x0123456789ABCDEF, 0xFEDCBA9876543210, 0xF096A5B4C3B2E187],
+            state: [0x0123456789ABCDEF, 0xFEDCBA9876543210, 0xF096A5B4C3B2E187],
+        }
+    }
+}
+
+impl TigerHash {
+    pub fn new() -> TigerHash {
+        TigerHash {
+            data: [0; 64],
+            state: [0x0123456789ABCDEF, 0xFEDCBA9876543210, 0xF096A5B4C3B2E187],
             total: 0,
         }
     }
 
-    pub fn update(&mut self, buffer: &[u8]) {
+    fn update(&mut self, buffer: &[u8]) {
         let tmp_pos = self.total & (BLOCK_SIZE - 1);
         let mut pos = 0;
         let mut length = buffer.len();
@@ -30,13 +44,13 @@ impl TigerState {
             self.total += n;
 
             if tmp_pos + n == BLOCK_SIZE {
-                tiger_compress(&self.data, &mut self.registers);
+                tiger_compress(&self.data, &mut self.state);
             }
         }
-        
+
         while length >= BLOCK_SIZE {
             self.data.copy_from_slice(&buffer[pos..pos + BLOCK_SIZE]);
-            tiger_compress(&self.data, &mut self.registers);
+            tiger_compress(&self.data, &mut self.state);
             pos += BLOCK_SIZE;
             self.total += BLOCK_SIZE;
             length -= BLOCK_SIZE;
@@ -46,7 +60,7 @@ impl TigerState {
         self.total += length;
     }
 
-    pub fn finalize(&mut self) -> TigerDigest {
+    fn finalize(&mut self) -> [u64; 3] {
         let mut tmppos = self.total & (BLOCK_SIZE - 1);
         self.data[tmppos] = 0x01;
         tmppos += 1;
@@ -55,7 +69,7 @@ impl TigerState {
             for i in &mut self.data[tmppos..] {
                 *i = 0
             }
-            tiger_compress(&self.data, &mut self.registers);
+            tiger_compress(&self.data, &mut self.state);
             self.data = [0; 64];
         } else {
             for i in &mut self.data[tmppos..BLOCK_SIZE - 8] {
@@ -64,9 +78,56 @@ impl TigerState {
         }
         let total = (self.total << 3) as u64;
         self.data[56..].copy_from_slice(&total.to_le_bytes());
-        tiger_compress(&self.data, &mut self.registers);
+        tiger_compress(&self.data, &mut self.state);
 
-        self.registers
+        self.state
+    }
+}
+
+impl BlockInput for TigerHash {
+    type BlockSize = U64;
+}
+
+impl Input for TigerHash {
+    #[inline]
+    fn input<B: AsRef<[u8]>>(&mut self, input: B) {
+        self.update(input.as_ref());
+    }
+
+    #[inline]
+    fn chain<B: AsRef<[u8]>>(mut self, data: B) -> Self
+    where
+        Self: Sized,
+    {
+        Input::input(&mut self, data.as_ref());
+        self
+    }
+}
+
+impl FixedOutput for TigerHash {
+    type OutputSize = U24;
+
+    #[inline]
+    fn fixed_result(mut self) -> GenericArray<u8, Self::OutputSize> {
+        let res = self.finalize();
+        let mut arr = GenericArray::default();
+        arr.copy_from_slice(
+            &[
+                res[0].to_be_bytes(),
+                res[1].to_be_bytes(),
+                res[2].to_be_bytes(),
+            ]
+            .concat(),
+        );
+        arr
+    }
+}
+
+impl Reset for TigerHash {
+    fn reset(&mut self) {
+        self.data = [0; 64];
+        self.state = [0x0123456789ABCDEF, 0xFEDCBA9876543210, 0xF096A5B4C3B2E187];
+        self.total = 0;
     }
 }
 
@@ -165,12 +226,6 @@ fn tiger_compress(block: &[u8; 64], state: &mut [u64; 3]) {
     state[0] = a ^ aa;
     state[1] = b.wrapping_sub(bb);
     state[2] = c.wrapping_add(cc);
-}
-
-pub fn tiger_str(data: &str) -> TigerDigest {
-    let mut state = TigerState::new();
-    state.update(data.as_bytes());
-    state.finalize()
 }
 
 const TABLE1: [u64; 256] = [
