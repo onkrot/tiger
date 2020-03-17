@@ -1,5 +1,5 @@
 [package]
-name = "tig"
+name = "tiger_hash"
 version = "0.1.0"
 authors = ["onkrot <rtym@yandex.ru>"]
 edition = "2018"

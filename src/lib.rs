@@ -1,3 +1,178 @@
+const BLOCK_SIZE: usize = 64;
+
+type Block = [u8; BLOCK_SIZE];
+type TigerDigest = [u64; 3];
+
+pub struct TigerState {
+    data: Block,
+    registers: TigerDigest,
+    total: usize,
+}
+
+impl TigerState {
+    pub fn new() -> TigerState {
+        TigerState {
+            data: [0; 64],
+            registers: [0x0123456789ABCDEF, 0xFEDCBA9876543210, 0xF096A5B4C3B2E187],
+            total: 0,
+        }
+    }
+
+    pub fn update(&mut self, buffer: &[u8]) {
+        let tmp_pos = self.total & (BLOCK_SIZE - 1);
+        let mut pos = 0;
+        let mut length = buffer.len();
+        if tmp_pos > 0 {
+            let n = std::cmp::min(buffer.len(), BLOCK_SIZE - tmp_pos);
+            self.data[tmp_pos..].copy_from_slice(&buffer[..n]);
+            pos += n;
+            length -= n;
+            self.total += n;
+
+            if tmp_pos + n == BLOCK_SIZE {
+                tiger_compress(&self.data, &mut self.registers);
+            }
+        }
+        
+        while length >= BLOCK_SIZE {
+            self.data.copy_from_slice(&buffer[pos..pos + BLOCK_SIZE]);
+            tiger_compress(&self.data, &mut self.registers);
+            pos += BLOCK_SIZE;
+            self.total += BLOCK_SIZE;
+            length -= BLOCK_SIZE;
+        }
+
+        self.data[..length].copy_from_slice(&buffer[pos..]);
+        self.total += length;
+    }
+
+    pub fn finalize(&mut self) -> TigerDigest {
+        let mut tmppos = self.total & (BLOCK_SIZE - 1);
+        self.data[tmppos] = 0x01;
+        tmppos += 1;
+
+        if tmppos > (BLOCK_SIZE - 8) {
+            for i in &mut self.data[tmppos..] {
+                *i = 0
+            }
+            tiger_compress(&self.data, &mut self.registers);
+            self.data = [0; 64];
+        } else {
+            for i in &mut self.data[tmppos..BLOCK_SIZE - 8] {
+                *i = 0
+            }
+        }
+        let total = (self.total << 3) as u64;
+        self.data[56..].copy_from_slice(&total.to_le_bytes());
+        tiger_compress(&self.data, &mut self.registers);
+
+        self.registers
+    }
+}
+
+fn t1(index: u64) -> u64 {
+    return TABLE1[(index & 0xFF) as usize];
+}
+
+fn t2(index: u64) -> u64 {
+    return TABLE2[(index & 0xFF) as usize];
+}
+
+fn t3(index: u64) -> u64 {
+    return TABLE3[(index & 0xFF) as usize];
+}
+
+fn t4(index: u64) -> u64 {
+    return TABLE4[(index & 0xFF) as usize];
+}
+
+macro_rules! round(
+($a:expr, $b:expr, $c:expr, $x:expr, $mul: expr) => {
+  $c = $c ^ $x;
+  $a = $a.wrapping_sub(
+    t1($c >> (0*8)) ^
+    t2($c >> (2*8)) ^
+    t3($c >> (4*8)) ^
+    t4($c >> (6*8)));
+  $b = $b.wrapping_add(
+    t4($c >> (1*8)) ^
+    t3($c >> (3*8)) ^
+    t2($c >> (5*8)) ^
+    t1($c >> (7*8)));
+  $b = $b.wrapping_mul($mul);
+}
+);
+
+macro_rules! pass {
+    ($a:expr,$b:expr,$c:expr, $x0:expr, $x1:expr, $x2:expr, $x3:expr, $x4:expr, $x5:expr, $x6:expr, $x7:expr, $mul:expr) => {
+        round!($a, $b, $c, $x0, $mul);
+        round!($b, $c, $a, $x1, $mul);
+        round!($c, $a, $b, $x2, $mul);
+        round!($a, $b, $c, $x3, $mul);
+        round!($b, $c, $a, $x4, $mul);
+        round!($c, $a, $b, $x5, $mul);
+        round!($a, $b, $c, $x6, $mul);
+        round!($b, $c, $a, $x7, $mul);
+    };
+}
+
+macro_rules! key_schedule {
+    ($x0:expr, $x1:expr, $x2:expr, $x3:expr, $x4:expr, $x5:expr, $x6:expr, $x7:expr) => {
+        $x0 = $x0.wrapping_sub($x7 ^ 0xA5A5A5A5A5A5A5A5);
+        $x1 = $x1 ^ $x0;
+        $x2 = $x2.wrapping_add($x1);
+        $x3 = $x3.wrapping_sub($x2 ^ ((!$x1) << 19));
+        $x4 = $x4 ^ $x3;
+        $x5 = $x5.wrapping_add($x4);
+        $x6 = $x6.wrapping_sub($x5 ^ ((!$x4) >> 23));
+        $x7 = $x7 ^ $x6;
+        $x0 = $x0.wrapping_add($x7);
+        $x1 = $x1.wrapping_sub($x0 ^ ((!$x7) << 19));
+        $x2 = $x2 ^ $x1;
+        $x3 = $x3.wrapping_add($x2);
+        $x4 = $x4.wrapping_sub($x3 ^ ((!$x2) >> 23));
+        $x5 = $x5 ^ $x4;
+        $x6 = $x6.wrapping_add($x5);
+        $x7 = $x7.wrapping_sub($x6 ^ 0x0123456789ABCDEF);
+    };
+}
+
+fn tiger_compress(block: &[u8; 64], state: &mut [u64; 3]) {
+    let (_, data, _) = unsafe { block.align_to::<u64>() };
+    let mut a = state[0];
+    let mut b = state[1];
+    let mut c = state[2];
+
+    let mut x0 = data[0];
+    let mut x1 = data[1];
+    let mut x2 = data[2];
+    let mut x3 = data[3];
+    let mut x4 = data[4];
+    let mut x5 = data[5];
+    let mut x6 = data[6];
+    let mut x7 = data[7];
+
+    let aa = a;
+    let bb = b;
+    let cc = c;
+
+    pass!(a, b, c, x0, x1, x2, x3, x4, x5, x6, x7, 5);
+    key_schedule!(x0, x1, x2, x3, x4, x5, x6, x7);
+    pass!(c, a, b, x0, x1, x2, x3, x4, x5, x6, x7, 7);
+    key_schedule!(x0, x1, x2, x3, x4, x5, x6, x7);
+    pass!(b, c, a, x0, x1, x2, x3, x4, x5, x6, x7, 9);
+
+    state[0] = a ^ aa;
+    state[1] = b.wrapping_sub(bb);
+    state[2] = c.wrapping_add(cc);
+}
+
+pub fn tiger_str(data: &str) -> TigerDigest {
+    let mut state = TigerState::new();
+    state.update(data.as_bytes());
+    state.finalize()
+}
+
 const TABLE1: [u64; 256] = [
     0x02AAB17CF7E90C5E, /*    0 */
     0xAC424B03E243A8EC, /*    1 */
@@ -1031,187 +1206,3 @@ const TABLE4: [u64; 256] = [
     0xC83223F1720AEF96, /* 1022 */
     0xC3A0396F7363A51F, /* 1023 */
 ];
-
-const BLOCK_SIZE: usize = 64;
-
-type Block = [u8; BLOCK_SIZE];
-type TigerDigest = [u64; 3];
-
-struct TigerState {
-    data: Block,
-    registers: TigerDigest,
-    total: usize
-}
-
-impl TigerState {
-
-    fn new() -> TigerState {
-        TigerState {
-            data: [0; 64],
-            registers: [0x0123456789ABCDEF, 0xFEDCBA9876543210, 0xF096A5B4C3B2E187],
-            total: 0
-        }
-    }
-
-    fn process(&mut self, buffer: &[u8]) {
-        let total = buffer.len();
-        if total != 0 {
-            let block_off = (BLOCK_SIZE + self.total) % BLOCK_SIZE;
-            let block_fill = std::cmp::min(block_off, total);
-            if block_off != 0 {
-                self.data[block_off..].copy_from_slice(&buffer[..block_fill]);
-                if block_fill < total {
-                    tiger_compress(&self.data, &mut self.registers);
-                }
-            }
-            let mut count = block_fill;
-            while (total - count) >= BLOCK_SIZE {
-                let mut tmp: [u8; 64] = [0; 64];
-                tmp.copy_from_slice(&buffer[count..count + BLOCK_SIZE]);
-                tiger_compress(&tmp, &mut self.registers);
-                count += BLOCK_SIZE;
-            }
-            if count < total {
-                self.data[..total - count].copy_from_slice(&buffer[count..]);
-            }
-            self.total += total;
-        }
-    }
-
-    fn digest(&mut self) -> TigerDigest {
-        let mut temp: Block = [0; 64];
-        let mut j = (BLOCK_SIZE + self.total) % BLOCK_SIZE;
-        temp[..j].copy_from_slice(&self.data[..j]);
-        temp[j] = 0x01;
-        j += 1;
-        while (j & 7) != 0 {
-            j += 1;
-        }
-
-        if j > 56 {
-            while j < 64 {
-                temp[j] = 0;
-                j += 1;
-            }
-            tiger_compress(&temp, &mut self.registers);
-            j = 0;
-        }
-        while j < 56 {
-            temp[j] = 0;
-            j += 1;
-        }
-
-        let total = (self.total << 3) as u64;
-        temp[56..].copy_from_slice(&total.to_le_bytes());
-        tiger_compress(&temp, &mut self.registers);
-        self.registers.clone()
-    }
-}
-
-fn t1(index: u64) -> u64 {
-    return TABLE1[(index & 0xFF) as usize];
-}
-
-fn t2(index: u64) -> u64 {
-    return TABLE2[(index & 0xFF) as usize];
-}
-
-fn t3(index: u64) -> u64 {
-    return TABLE3[(index & 0xFF) as usize];
-}
-
-fn t4(index: u64) -> u64 {
-    return TABLE4[(index & 0xFF) as usize];
-}
-
-macro_rules! round(
-($a:expr, $b:expr, $c:expr, $x:expr, $mul: expr) => (
-  $c = $c ^ $x;
-  $a = $a.wrapping_sub(
-    t1($c >> (0*8)) ^
-    t2($c >> (2*8)) ^
-    t3($c >> (4*8)) ^
-    t4($c >> (6*8)));
-  $b = $b.wrapping_add(
-    t4($c >> (1*8)) ^
-    t3($c >> (3*8)) ^
-    t2($c >> (5*8)) ^
-    t1($c >> (7*8)));
-  $b = $b.wrapping_mul($mul);
-)
-);
-
-macro_rules! pass {
-    ($a:expr,$b:expr,$c:expr, $x0:expr, $x1:expr, $x2:expr, $x3:expr, $x4:expr, $x5:expr, $x6:expr, $x7:expr, $mul:expr) => {
-        round!($a, $b, $c, $x0, $mul);
-        round!($b, $c, $a, $x1, $mul);
-        round!($c, $a, $b, $x2, $mul);
-        round!($a, $b, $c, $x3, $mul);
-        round!($b, $c, $a, $x4, $mul);
-        round!($c, $a, $b, $x5, $mul);
-        round!($a, $b, $c, $x6, $mul);
-        round!($b, $c, $a, $x7, $mul);
-    };
-}
-
-macro_rules! key_schedule {
-    ($x0:expr, $x1:expr, $x2:expr, $x3:expr, $x4:expr, $x5:expr, $x6:expr, $x7:expr) => {
-        $x0 = $x0.wrapping_sub($x7 ^ 0xA5A5A5A5A5A5A5A5);
-        $x1 = $x1 ^ $x0;
-        $x2 = $x2.wrapping_add($x1);
-        $x3 = $x3.wrapping_sub($x2 ^ ((!$x1) << 19));
-        $x4 = $x4 ^ $x3;
-        $x5 = $x5.wrapping_add($x4);
-        $x6 = $x6.wrapping_sub($x5 ^ ((!$x4) >> 23));
-        $x7 = $x7 ^ $x6;
-        $x0 = $x0.wrapping_add($x7);
-        $x1 = $x1.wrapping_sub($x0 ^ ((!$x7) << 19));
-        $x2 = $x2 ^ $x1;
-        $x3 = $x3.wrapping_add($x2);
-        $x4 = $x4.wrapping_sub($x3 ^ ((!$x2) >> 23));
-        $x5 = $x5 ^ $x4;
-        $x6 = $x6.wrapping_add($x5);
-        $x7 = $x7.wrapping_sub($x6 ^ 0x0123456789ABCDEF);
-    };
-}
-
-fn tiger_compress(block: &[u8; 64], state: &mut [u64; 3]) {
-    let (_, data, _) = unsafe { block.align_to::<u64>() };
-    let mut a = state[0];
-    let mut b = state[1];
-    let mut c = state[2];
-
-    let mut x0 = data[0];
-    let mut x1 = data[1];
-    let mut x2 = data[2];
-    let mut x3 = data[3];
-    let mut x4 = data[4];
-    let mut x5 = data[5];
-    let mut x6 = data[6];
-    let mut x7 = data[7];
-
-    let aa = a;
-    let bb = b;
-    let cc = c;
-
-    pass!(a, b, c, x0, x1, x2, x3, x4, x5, x6, x7, 5);
-    key_schedule!(x0, x1, x2, x3, x4, x5, x6, x7);
-    pass!(c, a, b, x0, x1, x2, x3, x4, x5, x6, x7, 7);
-    key_schedule!(x0, x1, x2, x3, x4, x5, x6, x7);
-    pass!(b, c, a, x0, x1, x2, x3, x4, x5, x6, x7, 9);
-
-    state[0] = a ^ aa;
-    state[1] = b.wrapping_sub(bb);
-    state[2] = c.wrapping_add(cc);
-}
-
-fn tiger(data: &str) -> TigerDigest {
-    let mut state = TigerState::new();
-    state.process(data.as_bytes());
-    state.digest()
-}
-
-fn main() {
-    let res = tiger("Tiger - A Fast New Hash Function, by Ross Anderson and Eli Biham, proceedings of Fast Software Encryption 3, Cambridge, 1996.");
-    print!("{:X?}", res);
-}
