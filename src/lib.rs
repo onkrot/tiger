@@ -113,9 +113,9 @@ impl FixedOutput for TigerHash {
         let mut arr = GenericArray::default();
         arr.copy_from_slice(
             &[
-                res[0].to_be_bytes(),
-                res[1].to_be_bytes(),
-                res[2].to_be_bytes(),
+                res[0].to_le_bytes(),
+                res[1].to_le_bytes(),
+                res[2].to_le_bytes(),
             ]
             .concat(),
         );
